@@ -88,7 +88,7 @@
                         <th class="p-4 text-xs font-bold w-48">檢討項目</th>
                         <th class="p-4 text-xs font-bold">檢討重點及注意事項</th>
                         <th class="p-4 text-xs font-bold w-1/4">檢討結果/備註</th>
-                        <th class="p-4 text-center text-xs font-bold w-20 no-print">確認</th>
+                        <th class="p-4 text-center text-xs font-bold w-32 no-print">確認 / 移動</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
@@ -156,9 +156,15 @@
                 catRow.innerHTML = `
                     <td class="p-4 font-bold text-slate-800 text-center bg-slate-200">${catIdx + 1}</td>
                     <td class="p-4 bg-slate-100" colspan="3">
-                        <input type="text" value="${cat.title}" 
-                               oninput="updateCatTitle(${catIdx}, this.value)" 
-                               class="bg-transparent font-bold text-slate-800 w-full outline-none py-1 focus:bg-white focus:px-2 rounded border-none">
+                        <div class="flex items-center gap-2">
+                            <input type="text" value="${cat.title}" 
+                                   oninput="updateCatTitle(${catIdx}, this.value)" 
+                                   class="bg-transparent font-bold text-slate-800 w-full outline-none py-1 focus:bg-white focus:px-2 rounded border-none">
+                            <div class="flex gap-1 no-print">
+                                <button onclick="moveCategory(${catIdx}, -1)" class="p-1 text-slate-400 hover:text-blue-600 transition-colors" title="主項上移">🔼</button>
+                                <button onclick="moveCategory(${catIdx}, 1)" class="p-1 text-slate-400 hover:text-blue-600 transition-colors" title="主項下移">🔽</button>
+                            </div>
+                        </div>
                     </td>
                     <td class="p-4 text-center no-print bg-slate-100">
                         <button type="button" onclick="addTask(${catIdx})" class="text-blue-600 font-bold hover:text-blue-800 flex items-center justify-center gap-1 w-full">
@@ -187,9 +193,15 @@
                                       oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'result', this.value)">${task.result}</textarea>
                         </td>
                         <td class="p-4 text-center align-top no-print">
-                            <input type="checkbox" ${task.checked ? 'checked' : ''} 
-                                   onchange="toggleTask(${catIdx}, ${taskIdx})"
-                                   class="h-6 w-6 rounded border-slate-300 text-blue-600 cursor-pointer">
+                            <div class="flex flex-col items-center gap-2">
+                                <input type="checkbox" ${task.checked ? 'checked' : ''} 
+                                       onchange="toggleTask(${catIdx}, ${taskIdx})"
+                                       class="h-6 w-6 rounded border-slate-300 text-blue-600 cursor-pointer">
+                                <div class="flex gap-2">
+                                    <button onclick="moveTask(${catIdx}, ${taskIdx}, -1)" class="text-xs text-slate-400 hover:text-blue-500" title="細項上移">🔼</button>
+                                    <button onclick="moveTask(${catIdx}, ${taskIdx}, 1)" class="text-xs text-slate-400 hover:text-blue-500" title="細項下移">🔽</button>
+                                </div>
+                            </div>
                         </td>
                     `;
                     tbody.appendChild(taskRow);
@@ -197,6 +209,25 @@
                 });
             });
             calculateProgress();
+        }
+
+        function moveCategory(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= checklistData.length) return;
+            const element = checklistData.splice(index, 1)[0];
+            checklistData.splice(newIndex, 0, element);
+            renderTable();
+            saveData();
+        }
+
+        function moveTask(catIdx, taskIdx, direction) {
+            const newIndex = taskIdx + direction;
+            const tasks = checklistData[catIdx].tasks;
+            if (newIndex < 0 || newIndex >= tasks.length) return;
+            const element = tasks.splice(taskIdx, 1)[0];
+            tasks.splice(newIndex, 0, element);
+            renderTable();
+            saveData();
         }
 
         function updateCatTitle(idx, val) { checklistData[idx].title = val; saveData(); }
