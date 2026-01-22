@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>結構預算編列檢核表</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        
+        .auto-expand {
+            min-height: 1.5em;
+            width: 100%;
+            line-height: 1.6;
+            resize: none;
+            overflow: hidden;
+            display: block;
+        }
+
+        .completed { background-color: #f0fdf4 !important; }
+        .category-row { background-color: #f1f5f9; }
+        
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; padding: 0 !important; }
+            .card { border: none !important; box-shadow: none !important; width: 100% !important; max-width: none !important; }
+            @page {
+                size: A4 portrait;
+                margin: 1.2cm;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-2xl rounded-xl overflow-hidden card" id="appCanvas">
+        <!-- Header -->
+        <div class="bg-slate-800 text-white p-6 no-print">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">結構預算編列檢核表</h1>
+                </div>
+                <div class="text-right text-sm">
+                    <div class="mb-1 text-slate-300">
+                        工程名稱：
+                        <input type="text" id="projectName" 
+                               oninput="saveProjectName(this.value)"
+                               class="bg-slate-700 border-none rounded px-2 py-1 text-white focus:ring-2 focus:ring-blue-500 outline-none w-48 md:w-64" 
+                               placeholder="輸入工程名稱...">
+                    </div>
+                    <div class="opacity-70">製表日期：<span id="currentDate"></span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="p-6 border-b bg-white flex flex-col lg:flex-row gap-6 items-center no-print">
+            <div class="flex-1 w-full">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-semibold text-slate-600">檢核進度</span>
+                    <span id="progressText" class="text-sm font-bold text-blue-600">0%</span>
+                </div>
+                <div class="w-full bg-slate-200 rounded-full h-3">
+                    <div id="progressBar" class="bg-blue-600 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-2 justify-center">
+                <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors">
+                    📥 匯出 Excel
+                </button>
+                <label class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 cursor-pointer transition-colors">
+                    📤 匯入檔案 <input type="file" id="importFile" class="hidden" accept=".xlsx, .xls, .csv" onchange="importFromExcel(event)">
+                </label>
+                <button onclick="triggerPrint()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors">
+                    📄 導出 A4 PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse" id="mainTable">
+                <thead>
+                    <tr class="bg-slate-50 border-b-2 border-slate-200 text-slate-600 text-left">
+                        <th class="p-4 text-xs font-bold w-16 text-center">項次</th>
+                        <th class="p-4 text-xs font-bold w-48">檢討項目</th>
+                        <th class="p-4 text-xs font-bold">檢討重點及注意事項</th>
+                        <th class="p-4 text-xs font-bold w-1/4">檢討結果/備註</th>
+                        <th class="p-4 text-center text-xs font-bold w-20 no-print">確認</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- 動態內容 -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-6 border-t bg-slate-50 no-print text-center">
+            <button onclick="addCategory()" class="px-8 py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all font-medium">
+                ➕ 新增檢討大類 (主項)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let checklistData = [
+            {
+                title: 'A100 調查鑑定',
+                tasks: [
+                    { name: '鄰房鑑定', note: '○鄰房鑑定：屬業主費用。需確認鑑定報告內容是否包含傾斜與裂縫紀錄。', result: '', checked: false }
+                ]
+            }
+        ];
+
+        window.onload = () => {
+            const savedData = localStorage.getItem('budget_checklist_vFINAL');
+            const savedProject = localStorage.getItem('budget_project_name');
+            if (savedData) {
+                try { checklistData = JSON.parse(savedData); } catch(e) { console.error("讀取失敗:", e); }
+            }
+            if (savedProject) document.getElementById('projectName').value = savedProject;
+            document.getElementById('currentDate').innerText = new Date().toLocaleDateString('zh-TW');
+            renderTable();
+        };
+
+        function saveData() {
+            localStorage.setItem('budget_checklist_vFINAL', JSON.stringify(checklistData));
+            calculateProgress();
+        }
+
+        function saveProjectName(val) {
+            localStorage.setItem('budget_project_name', val);
+        }
+
+        function autoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = el.scrollHeight + 'px';
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            if (checklistData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">目前沒有數據。</td></tr>`;
+                calculateProgress();
+                return;
+            }
+
+            checklistData.forEach((cat, catIdx) => {
+                const catRow = document.createElement('tr');
+                catRow.className = 'category-row border-t-2 border-slate-300';
+                catRow.innerHTML = `
+                    <td class="p-4 font-bold text-slate-800 text-center bg-slate-200">${catIdx + 1}</td>
+                    <td class="p-4 bg-slate-100" colspan="3">
+                        <input type="text" value="${cat.title}" 
+                               oninput="updateCatTitle(${catIdx}, this.value)" 
+                               class="bg-transparent font-bold text-slate-800 w-full outline-none py-1 focus:bg-white focus:px-2 rounded border-none">
+                    </td>
+                    <td class="p-4 text-center no-print bg-slate-100">
+                        <button type="button" onclick="addTask(${catIdx})" class="text-blue-600 font-bold hover:text-blue-800 flex items-center justify-center gap-1 w-full">
+                            <span class="text-lg">＋</span>細項
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(catRow);
+
+                cat.tasks.forEach((task, taskIdx) => {
+                    const taskRow = document.createElement('tr');
+                    taskRow.className = `check-row border-b border-slate-100 transition-colors ${task.checked ? 'completed' : ''}`;
+                    taskRow.innerHTML = `
+                        <td class="p-4 text-slate-400 text-xs italic pl-6 align-top text-center">${catIdx + 1}.${taskIdx + 1}</td>
+                        <td class="p-4 align-top">
+                            <textarea class="cell-textarea text-sm font-medium text-slate-700 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
+                                      oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'name', this.value)">${task.name}</textarea>
+                        </td>
+                        <td class="p-4 align-top">
+                            <textarea class="cell-textarea text-sm text-slate-500 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
+                                      oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'note', this.value)">${task.note}</textarea>
+                        </td>
+                        <td class="p-4 align-top">
+                            <textarea class="cell-textarea text-sm text-blue-700 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
+                                      placeholder="填寫檢討結果..."
+                                      oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'result', this.value)">${task.result}</textarea>
+                        </td>
+                        <td class="p-4 text-center align-top no-print">
+                            <input type="checkbox" ${task.checked ? 'checked' : ''} 
+                                   onchange="toggleTask(${catIdx}, ${taskIdx})"
+                                   class="h-6 w-6 rounded border-slate-300 text-blue-600 cursor-pointer">
+                        </td>
+                    `;
+                    tbody.appendChild(taskRow);
+                    setTimeout(() => { taskRow.querySelectorAll('textarea').forEach(autoResize); }, 0);
+                });
+            });
+            calculateProgress();
+        }
+
+        function updateCatTitle(idx, val) { checklistData[idx].title = val; saveData(); }
+        function updateTaskField(cIdx, tIdx, field, val) { checklistData[cIdx].tasks[tIdx][field] = val; saveData(); }
+        function toggleTask(cIdx, tIdx) { 
+            checklistData[cIdx].tasks[tIdx].checked = !checklistData[cIdx].tasks[tIdx].checked; 
+            renderTable(); 
+            saveData(); 
+        }
+
+        function addCategory() { checklistData.push({ title: '新檢討大類', tasks: [] }); renderTable(); saveData(); }
+        function addTask(cIdx) { checklistData[cIdx].tasks.push({ name: '新細項', note: '', result: '', checked: false }); renderTable(); saveData(); }
+
+        function calculateProgress() {
+            const allTasks = checklistData.flatMap(c => c.tasks);
+            const total = allTasks.length;
+            const completed = allTasks.filter(x => x.checked).length;
+            const percentage = total === 0 ? 0 : Math.round((completed / total) * 100);
+            document.getElementById('progressBar').style.width = percentage + '%';
+            document.getElementById('progressText').innerText = percentage + '%';
+        }
+
+        function triggerPrint() {
+            const projectName = document.getElementById('projectName').value || "結構預算檢核表";
+            const date = document.getElementById('currentDate').innerText;
+            
+            let printHTML = `
+            <html>
+            <head>
+                <title>${projectName}</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+                    body { font-family: "Noto Sans TC", sans-serif; margin: 0; padding: 0; background: white; }
+                    @page { size: A4 portrait; margin: 1.2cm; }
+                    .header { margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+                    .header h1 { margin: 0; font-size: 18pt; color: #1a202c; }
+                    .info { font-size: 9pt; color: #4a5568; margin-top: 5px; }
+                    table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; }
+                    th, td { border: 1px solid #000; padding: 8px; text-align: left; vertical-align: top; font-size: 9pt; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
+                    th { background-color: #f1f5f9; font-weight: bold; text-align: center; }
+                    .cat-row { background-color: #f8fafc; font-weight: bold; }
+                    .completed { background-color: #f0fdf4 !important; }
+                    .col-num { width: 8%; text-align: center; }
+                    .col-item { width: 20%; }
+                    .col-note { width: 31%; }
+                    .col-result { width: 31%; }
+                    .col-status { width: 10%; text-align: center; border-right: 2.5pt solid #000 !important; font-weight: bold; }
+                    th:last-child { border-right: 2.5pt solid #000 !important; }
+                    .cat-row td:last-child { border-right: 2.5pt solid #000 !important; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>結構預算編列檢核表</h1>
+                    <div class="info">工程名稱：${projectName} | 製表日期：${date}</div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="col-num">項次</th>
+                            <th class="col-item">檢討項目</th>
+                            <th class="col-note">檢討重點及注意事項</th>
+                            <th class="col-result">檢討結果/備註</th>
+                            <th class="col-status">確認</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+            
+            checklistData.forEach((cat, ci) => {
+                printHTML += `<tr class="cat-row"><td class="col-num">${ci+1}</td><td colspan="4">${cat.title}</td></tr>`;
+                cat.tasks.forEach((t, ti) => {
+                    printHTML += `
+                        <tr class="${t.checked?'completed':''}">
+                            <td class="col-num">${ci+1}.${ti+1}</td>
+                            <td class="col-item">${t.name}</td>
+                            <td class="col-note">${t.note}</td>
+                            <td class="col-result">${t.result}</td>
+                            <td class="col-status">${t.checked ? 'V' : ''}</td>
+                        </tr>`;
+                });
+            });
+            
+            printHTML += `</tbody></table></body></html>`;
+            const win = window.open('', '_blank');
+            win.document.write(printHTML);
+            win.document.close();
+            win.onload = () => setTimeout(() => win.print(), 500);
+        }
+
+        function exportToExcel() {
+            const data = [["項次", "檢討項目", "檢討重點及注意事項", "檢討結果", "確認"]];
+            checklistData.forEach((c, ci) => {
+                data.push([ci + 1, c.title, "", "", ""]);
+                c.tasks.forEach((t, ti) => {
+                    data.push([`${ci+1}.${ti+1}`, t.name, t.note, t.result, t.checked ? "V" : ""]);
+                });
+            });
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Checklist");
+            XLSX.writeFile(wb, `${document.getElementById('projectName').value || '預算檢核'}.xlsx`);
+        }
+
+        function importFromExcel(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const workbook = XLSX.read(new Uint8Array(evt.target.result), {type: 'array'});
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
+
+                let headerRowIndex = -1;
+                for(let i=0; i<json.length; i++) {
+                    const rowStr = JSON.stringify(json[i]);
+                    if(rowStr.includes("項次") || rowStr.includes("項目")) { headerRowIndex = i; break; }
+                }
+                
+                if (headerRowIndex === -1) { alert("無法識別表格格式，請確保第一列包含「項次」標題。"); return; }
+
+                const temp = [];
+                let currentCat = null;
+
+                for(let i = headerRowIndex + 1; i < json.length; i++) {
+                    const row = json[i];
+                    if (!row || row.length === 0) continue;
+
+                    let c0 = String(row[0] || "").trim();
+                    let c1 = String(row[1] || "").trim();
+                    let c2 = String(row[2] || "").trim();
+                    let c3 = String(row[3] || "").trim();
+                    let c4 = String(row[4] || "").trim();
+
+                    const isNewCategory = (c0 && !c0.includes('.') && c1 && !c2);
+                    
+                    if (isNewCategory) {
+                        currentCat = { title: c1, tasks: [] };
+                        temp.push(currentCat);
+                    } else if (c1 || c2) {
+                        if (!currentCat) {
+                            currentCat = { title: "未分類項目", tasks: [] };
+                            temp.push(currentCat);
+                        }
+                        currentCat.tasks.push({
+                            name: c1 || "無標題",
+                            note: c2 || "",
+                            result: c3 || "",
+                            checked: (c4.toUpperCase() === "V" || c4 === "完成" || c4 === "確認" || c4 === "1")
+                        });
+                    }
+                }
+
+                if (temp.length > 0) {
+                    checklistData = temp;
+                    renderTable();
+                    saveData();
+                    alert("資料匯入成功！");
+                } else {
+                    alert("匯入失敗：未找到有效資料列。");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    </script>
+</body>
+</html>
