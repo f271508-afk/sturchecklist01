@@ -8,7 +8,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
-        body { font-family: 'Noto Sans TC', sans-serif; }
+        body { font-family: 'Noto Sans TC', sans-serif; overflow-x: hidden; }
         
         .auto-expand {
             min-height: 1.5em;
@@ -22,6 +22,58 @@
         .completed { background-color: #f0fdf4 !important; }
         .category-row { background-color: #f1f5f9; }
         
+        /* 滑動刪除相關樣式 - 向右滑動顯示左側按鈕 */
+        .swipe-container {
+            position: relative;
+            overflow: hidden;
+            touch-action: pan-y;
+            background-color: white;
+        }
+        
+        .swipe-content {
+            position: relative;
+            z-index: 2;
+            background: inherit;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            width: 100%;
+        }
+
+        /* 最小化的 X 按鈕，放置於左側側邊 */
+        .swipe-action {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 50px;
+            background-color: #f8fafc;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-right: 1px solid #e2e8f0;
+        }
+
+        /* 內部的小 X 字體最小化 */
+        .swipe-action span {
+            font-size: 0.75rem;
+            transform: scale(0.8);
+            font-weight: bold;
+        }
+        
+        .swipe-action:hover {
+            background-color: #fef2f2;
+            color: #ef4444;
+        }
+
+        /* 向右滑動後的位移量 */
+        .swiped-right .swipe-content {
+            transform: translateX(50px);
+        }
+
         @media print {
             .no-print { display: none !important; }
             body { background: white !important; padding: 0 !important; }
@@ -42,15 +94,15 @@
                 <div>
                     <h1 class="text-2xl font-bold tracking-tight">預算編列檢核表</h1>
                 </div>
-                <div class="text-right text-sm">
-                    <div class="mb-1 text-slate-300">
-                        工程名稱：
+                <div class="text-right">
+                    <div class="mb-1 text-slate-300 text-lg flex items-center justify-end gap-2">
+                        <span class="font-bold">工程名稱：</span>
                         <input type="text" id="projectName" 
                                oninput="saveProjectName(this.value)"
-                               class="bg-slate-700 border-none rounded px-2 py-1 text-white focus:ring-2 focus:ring-blue-500 outline-none w-48 md:w-64" 
+                               class="bg-slate-700 border-none rounded px-3 py-1.5 text-white focus:ring-2 focus:ring-blue-500 outline-none w-64 md:w-80 text-lg font-medium" 
                                placeholder="輸入工程名稱...">
                     </div>
-                    <div class="opacity-70">製表日期：<span id="currentDate"></span></div>
+                    <div class="opacity-70 text-sm">製表日期：<span id="currentDate"></span></div>
                 </div>
             </div>
         </div>
@@ -88,7 +140,7 @@
                         <th class="p-4 text-xs font-bold w-48">檢討項目</th>
                         <th class="p-4 text-xs font-bold">檢討重點及注意事項</th>
                         <th class="p-4 text-xs font-bold w-1/4">檢討結果/備註</th>
-                        <th class="p-4 text-center text-xs font-bold w-32 no-print">確認 / 移動</th>
+                        <th class="p-4 text-center text-xs font-bold w-32 no-print">確認 / 排序</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
@@ -99,6 +151,7 @@
 
         <!-- Footer -->
         <div class="p-6 border-t bg-slate-50 no-print text-center">
+            <div class="text-xs text-slate-400 mb-4 italic">提示：主項不可刪除；細項請向右滑動點選左側 ✕ 刪除</div>
             <button onclick="addCategory()" class="px-8 py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all font-medium">
                 ➕ 新增檢討大類 (主項)
             </button>
@@ -145,7 +198,7 @@
             tbody.innerHTML = '';
 
             if (checklistData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">目前沒有數據。</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">目前沒有數據，請點擊下方按鈕新增。</td></tr>`;
                 calculateProgress();
                 return;
             }
@@ -160,55 +213,99 @@
                             <input type="text" value="${cat.title}" 
                                    oninput="updateCatTitle(${catIdx}, this.value)" 
                                    class="bg-transparent font-bold text-slate-800 w-full outline-none py-1 focus:bg-white focus:px-2 rounded border-none">
-                            <div class="flex gap-1 no-print">
-                                <button onclick="moveCategory(${catIdx}, -1)" class="p-1 text-slate-400 hover:text-blue-600 transition-colors" title="主項上移">🔼</button>
-                                <button onclick="moveCategory(${catIdx}, 1)" class="p-1 text-slate-400 hover:text-blue-600 transition-colors" title="主項下移">🔽</button>
-                            </div>
                         </div>
                     </td>
                     <td class="p-4 text-center no-print bg-slate-100">
-                        <button type="button" onclick="addTask(${catIdx})" class="text-blue-600 font-bold hover:text-blue-800 flex items-center justify-center gap-1 w-full">
-                            <span class="text-lg">＋</span>細項
-                        </button>
+                        <div class="flex flex-col items-center gap-1">
+                            <button type="button" onclick="addTask(${catIdx})" class="text-blue-600 font-bold hover:text-blue-800 text-xs mb-1">
+                                ＋細項
+                            </button>
+                            <div class="flex gap-4 justify-center border-t border-slate-200 pt-1 w-full">
+                                <button onclick="moveCategory(${catIdx}, -1)" class="text-xs text-slate-400 hover:text-blue-600" title="上移">🔼</button>
+                                <button onclick="moveCategory(${catIdx}, 1)" class="text-xs text-slate-400 hover:text-blue-600" title="下移">🔽</button>
+                            </div>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(catRow);
 
                 cat.tasks.forEach((task, taskIdx) => {
                     const taskRow = document.createElement('tr');
-                    taskRow.className = `check-row border-b border-slate-100 transition-colors ${task.checked ? 'completed' : ''}`;
+                    taskRow.className = `swipe-container border-b border-slate-100 ${task.checked ? 'completed' : ''}`;
+                    
                     taskRow.innerHTML = `
-                        <td class="p-4 text-slate-400 text-xs italic pl-6 align-top text-center">${catIdx + 1}.${taskIdx + 1}</td>
-                        <td class="p-4 align-top">
-                            <textarea class="cell-textarea text-sm font-medium text-slate-700 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
-                                      oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'name', this.value)">${task.name}</textarea>
-                        </td>
-                        <td class="p-4 align-top">
-                            <textarea class="cell-textarea text-sm text-slate-500 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
-                                      oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'note', this.value)">${task.note}</textarea>
-                        </td>
-                        <td class="p-4 align-top">
-                            <textarea class="cell-textarea text-sm text-blue-700 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
-                                      placeholder="填寫檢討結果..."
-                                      oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'result', this.value)">${task.result}</textarea>
-                        </td>
-                        <td class="p-4 text-center align-top no-print">
-                            <div class="flex flex-col items-center gap-2">
-                                <input type="checkbox" ${task.checked ? 'checked' : ''} 
-                                       onchange="toggleTask(${catIdx}, ${taskIdx})"
-                                       class="h-6 w-6 rounded border-slate-300 text-blue-600 cursor-pointer">
-                                <div class="flex gap-2">
-                                    <button onclick="moveTask(${catIdx}, ${taskIdx}, -1)" class="text-xs text-slate-400 hover:text-blue-500" title="細項上移">🔼</button>
-                                    <button onclick="moveTask(${catIdx}, ${taskIdx}, 1)" class="text-xs text-slate-400 hover:text-blue-500" title="細項下移">🔽</button>
+                        <div class="swipe-action no-print" onclick="deleteTask(${catIdx}, ${taskIdx})"><span>✕</span></div>
+                        <div class="swipe-content">
+                            <td class="p-4 text-slate-400 text-xs italic align-top text-center w-16">${catIdx + 1}.${taskIdx + 1}</td>
+                            <td class="p-4 align-top w-48">
+                                <textarea class="cell-textarea text-sm font-medium text-slate-700 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
+                                          oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'name', this.value)">${task.name}</textarea>
+                            </td>
+                            <td class="p-4 align-top">
+                                <textarea class="cell-textarea text-sm text-slate-500 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
+                                          oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'note', this.value)">${task.note}</textarea>
+                            </td>
+                            <td class="p-4 align-top w-1/4">
+                                <textarea class="cell-textarea text-sm text-blue-700 auto-expand bg-transparent outline-none focus:bg-white p-1 rounded" 
+                                          placeholder="填寫檢討結果..."
+                                          oninput="autoResize(this); updateTaskField(${catIdx}, ${taskIdx}, 'result', this.value)">${task.result}</textarea>
+                            </td>
+                            <td class="p-4 text-center align-top no-print w-32">
+                                <div class="flex flex-col items-center gap-2">
+                                    <input type="checkbox" ${task.checked ? 'checked' : ''} 
+                                           onchange="toggleTask(${catIdx}, ${taskIdx})"
+                                           class="h-6 w-6 rounded border-slate-300 text-blue-600 cursor-pointer">
+                                    <div class="flex gap-2">
+                                        <button onclick="moveTask(${catIdx}, ${taskIdx}, -1)" class="text-xs text-slate-400 hover:text-blue-500" title="細項上移">🔼</button>
+                                        <button onclick="moveTask(${catIdx}, ${taskIdx}, 1)" class="text-xs text-slate-400 hover:text-blue-500" title="細項下移">🔽</button>
+                                    </div>
                                 </div>
-                            </div>
-                        </td>
+                            </td>
+                        </div>
                     `;
                     tbody.appendChild(taskRow);
+                    initSwipe(taskRow);
                     setTimeout(() => { taskRow.querySelectorAll('textarea').forEach(autoResize); }, 0);
                 });
             });
             calculateProgress();
+        }
+
+        function initSwipe(el) {
+            let startX = 0;
+            el.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+            }, { passive: true });
+
+            el.addEventListener('touchmove', (e) => {
+                const diff = e.touches[0].clientX - startX; 
+                if (diff > 30) { 
+                    el.classList.add('swiped-right');
+                } else if (diff < -30) { 
+                    el.classList.remove('swiped-right');
+                }
+            }, { passive: true });
+
+            el.addEventListener('mousedown', (e) => {
+                startX = e.clientX;
+                const handleMouseMove = (em) => {
+                    const diff = em.clientX - startX;
+                    if (diff > 40) el.classList.add('swiped-right');
+                    if (diff < -40) el.classList.remove('swiped-right');
+                };
+                const handleMouseUp = () => {
+                    window.removeEventListener('mousemove', handleMouseMove);
+                    window.removeEventListener('mouseup', handleMouseUp);
+                };
+                window.addEventListener('mousemove', handleMouseMove);
+                window.addEventListener('mouseup', handleMouseUp);
+            });
+        }
+
+        function deleteTask(catIdx, taskIdx) {
+            checklistData[catIdx].tasks.splice(taskIdx, 1);
+            renderTable();
+            saveData();
         }
 
         function moveCategory(index, direction) {
@@ -251,7 +348,7 @@
         }
 
         function triggerPrint() {
-            const projectName = document.getElementById('projectName').value || "結構預算檢核表";
+            const projectName = document.getElementById('projectName').value || "預算檢核表";
             const date = document.getElementById('currentDate').innerText;
             
             let printHTML = `
@@ -264,7 +361,7 @@
                     @page { size: A4 portrait; margin: 1.2cm; }
                     .header { margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
                     .header h1 { margin: 0; font-size: 18pt; color: #1a202c; }
-                    .info { font-size: 9pt; color: #4a5568; margin-top: 5px; }
+                    .info { font-size: 11pt; color: #1a202c; margin-top: 8px; font-weight: 500; }
                     table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; }
                     th, td { border: 1px solid #000; padding: 8px; text-align: left; vertical-align: top; font-size: 9pt; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
                     th { background-color: #f1f5f9; font-weight: bold; text-align: center; }
@@ -274,14 +371,15 @@
                     .col-item { width: 20%; }
                     .col-note { width: 31%; }
                     .col-result { width: 31%; }
-                    .col-status { width: 10%; text-align: center; border-right: 2.5pt solid #000 !important; font-weight: bold; }
-                    th:last-child { border-right: 2.5pt solid #000 !important; }
-                    .cat-row td:last-child { border-right: 2.5pt solid #000 !important; }
+                    .col-status { width: 10%; text-align: center; border-right: 2px solid #000 !important; font-weight: bold; }
+                    .sig-area { margin-top: 20px; text-align: right; font-size: 10pt; page-break-inside: avoid; }
+                    .sig-box { display: inline-block; margin-left: 40px; }
+                    .sig-line { display: inline-block; width: 100px; border-bottom: 1px solid #000; height: 20px; vertical-align: bottom; }
                 </style>
             </head>
             <body>
                 <div class="header">
-                    <h1>結構預算編列檢核表</h1>
+                    <h1>預算編列檢核表</h1>
                     <div class="info">工程名稱：${projectName} | 製表日期：${date}</div>
                 </div>
                 <table>
@@ -310,11 +408,17 @@
                 });
             });
             
-            printHTML += `</tbody></table></body></html>`;
+            printHTML += `</tbody></table>
+                <div class="sig-area">
+                    <div class="sig-box">製表：<span class="sig-line"></span></div>
+                    <div class="sig-box">複核：<span class="sig-line"></span></div>
+                </div>
+            </body></html>`;
+
             const win = window.open('', '_blank');
             win.document.write(printHTML);
             win.document.close();
-            win.onload = () => setTimeout(() => win.print(), 500);
+            win.onload = () => setTimeout(() => { win.print(); win.close(); }, 500);
         }
 
         function exportToExcel() {
@@ -339,55 +443,34 @@
                 const workbook = XLSX.read(new Uint8Array(evt.target.result), {type: 'array'});
                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
-
                 let headerRowIndex = -1;
                 for(let i=0; i<json.length; i++) {
                     const rowStr = JSON.stringify(json[i]);
                     if(rowStr.includes("項次") || rowStr.includes("項目")) { headerRowIndex = i; break; }
                 }
-                
-                if (headerRowIndex === -1) { alert("無法識別表格格式，請確保第一列包含「項次」標題。"); return; }
-
+                if (headerRowIndex === -1) { alert("無法識別格式"); return; }
                 const temp = [];
                 let currentCat = null;
-
                 for(let i = headerRowIndex + 1; i < json.length; i++) {
                     const row = json[i];
                     if (!row || row.length === 0) continue;
-
                     let c0 = String(row[0] || "").trim();
                     let c1 = String(row[1] || "").trim();
                     let c2 = String(row[2] || "").trim();
                     let c3 = String(row[3] || "").trim();
                     let c4 = String(row[4] || "").trim();
-
-                    const isNewCategory = (c0 && !c0.includes('.') && c1 && !c2);
-                    
-                    if (isNewCategory) {
+                    if (c0 && !c0.includes('.') && c1 && !c2) {
                         currentCat = { title: c1, tasks: [] };
                         temp.push(currentCat);
                     } else if (c1 || c2) {
-                        if (!currentCat) {
-                            currentCat = { title: "未分類項目", tasks: [] };
-                            temp.push(currentCat);
-                        }
+                        if (!currentCat) { currentCat = { title: "未分類項目", tasks: [] }; temp.push(currentCat); }
                         currentCat.tasks.push({
-                            name: c1 || "無標題",
-                            note: c2 || "",
-                            result: c3 || "",
-                            checked: (c4.toUpperCase() === "V" || c4 === "完成" || c4 === "確認" || c4 === "1")
+                            name: c1 || "無標題", note: c2 || "", result: c3 || "",
+                            checked: (c4.toUpperCase() === "V" || c4 === "完成")
                         });
                     }
                 }
-
-                if (temp.length > 0) {
-                    checklistData = temp;
-                    renderTable();
-                    saveData();
-                    alert("資料匯入成功！");
-                } else {
-                    alert("匯入失敗：未找到有效資料列。");
-                }
+                if (temp.length > 0) { checklistData = temp; renderTable(); saveData(); alert("匯入成功"); }
             };
             reader.readAsArrayBuffer(file);
         }
